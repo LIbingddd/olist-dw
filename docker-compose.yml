@@ -1,0 +1,62 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: olist-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?先复制 .env.example 成 .env，填上密码}
+      MYSQL_DATABASE: shop
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --local-infile=1
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+      - ./data:/data
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  spark-master:
+    image: apache/spark:3.5.9
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?先复制 .env.example 成 .env，填上密码}
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./jobs:/opt/jobs:ro
+      - ./py:/opt/py:ro
+      - ./data:/data:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  spark-worker:
+    image: apache/spark:3.5.9
+    container_name: spark-worker
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    environment:
+      - SPARK_NO_DAEMONIZE=true
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2g
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?先复制 .env.example 成 .env，填上密码}
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./jobs:/opt/jobs:ro
+      - ./py:/opt/py:ro
+      - ./data:/data:ro
+    depends_on:
+      - spark-master
+
+volumes:
+  mysql-data:
